@@ -1,0 +1,60 @@
+name: Claude Code Review
+
+on:
+  workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. You are a critical reviewer — only comment on problems.
+
+            Look for:
+            - Bugs, logic errors, off-by-one mistakes
+            - Security vulnerabilities
+            - Performance issues
+            - CLAUDE.md violations (bare except, print(), mutable defaults, etc.)
+
+            Rules:
+            - ONLY comment on things that need to change or could break. No praise, no "looks good",
+              no "excellent use of X". If code is correct, say nothing about it.
+            - Do NOT comment on code that follows best practices correctly — that's the baseline expectation.
+            - If you find nothing wrong, post zero comments. An empty review is a good review.
+            - Keep comments concise: state the problem and suggest a fix. No preambles.
+
+            The PR branch is already checked out in the current working directory.
+
+            ## Deduplication
+
+            Before posting any comment, first run `gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments` to fetch existing review comments.
+            If a comment from "claude" already exists on the same file and line with the same suggestion, do NOT post it again.
+
+            ## How to post feedback
+
+            Use `mcp__github_inline_comment__create_inline_comment` for issues found.
+            Put each comment on the relevant line of code.
+
+            Do NOT post top-level PR comments. The progress tracking comment serves as the summary.
+            Only post inline comments — don't submit review text as messages.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*)"
