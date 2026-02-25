@@ -1,0 +1,73 @@
+name: Gemini Code Review
+
+on:
+  workflow_call:
+    secrets:
+      GEMINI_API_KEY:
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff and commit SHA
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+          echo "head_sha=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/run-gemini-cli@v1
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            You are reviewing PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            The PR diff is at /tmp/pr.diff. Read it.
+
+            Review this pull request. You are a critical reviewer — only comment on problems.
+
+            Look for:
+            - Bugs, logic errors, off-by-one mistakes
+            - Security vulnerabilities
+            - Performance issues
+            - Type safety issues
+
+            Rules:
+            - ONLY comment on things that need to change or could break. No praise, no "looks good",
+              no "excellent use of X". If code is correct, say nothing about it.
+            - Do NOT comment on code that follows best practices correctly — that's the baseline expectation.
+            - If you find nothing wrong, post zero comments. An empty review is a good review.
+            - Keep comments concise: state the problem and suggest a fix. No preambles.
+            - Prefix each comment body with "🤖 **Gemini**:" so it's clear which reviewer posted it.
+
+            ## Deduplication
+
+            Before posting any comment, first run:
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments
+
+            If a comment already exists on the same file and line with the same suggestion, do NOT post it again.
+
+            ## How to post feedback
+
+            For each issue found, post an inline review comment using:
+
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+              -f body="<your comment>" \
+              -f commit_id="${{ steps.pr.outputs.head_sha }}" \
+              -f path="<file path>" \
+              -F line=<line number> \
+              -f side="RIGHT"
+
+            Do NOT post top-level PR comments. Only post inline comments on specific lines.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
