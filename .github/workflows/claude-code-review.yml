@@ -21,12 +21,12 @@ jobs:
 
       - name: Delete stale progress-tracking comment
         env:
-          GH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh api --paginate "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
             --jq '.[] | select(.user.login == "claude[bot]") | select(.body | test("Review complete")) | .id' \
           | while read -r id; do
-              gh api -X DELETE "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments/$id"
+              gh api -X DELETE "repos/${{ github.repository }}/issues/comments/$id" || true
             done
 
       - uses: anthropics/claude-code-action@v1
