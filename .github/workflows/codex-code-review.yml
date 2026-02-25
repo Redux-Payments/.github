@@ -18,12 +18,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get PR diff
-        id: diff
+      - name: Fetch shared review prompt and PR metadata
+        id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          gh api repos/Redux-Payments/.github/contents/.github/prompts/code-review.md \
+            --jq '.content' | base64 -d > /tmp/review-prompt.md
           gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+          echo "head_sha=$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
 
       - uses: openai/codex-action@v1
         with:
@@ -31,30 +34,10 @@ jobs:
           prompt: |
             You are reviewing PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
 
+            Read /tmp/review-prompt.md for the base review instructions and follow them.
             The PR diff is at /tmp/pr.diff. Read it.
 
-            Review this pull request. You are a critical reviewer — only comment on problems.
-
-            Look for:
-            - Bugs, logic errors, off-by-one mistakes
-            - Security vulnerabilities
-            - Performance issues
-            - Type safety issues
-
-            Rules:
-            - ONLY comment on things that need to change or could break. No praise, no "looks good",
-              no "excellent use of X". If code is correct, say nothing about it.
-            - Do NOT comment on code that follows best practices correctly — that's the baseline expectation.
-            - If you find nothing wrong, post zero comments. An empty review is a good review.
-            - Keep comments concise: state the problem and suggest a fix. No preambles.
-            - Prefix each comment body with "🤖 **Codex**:" so it's clear which reviewer posted it.
-
-            ## Deduplication
-
-            Before posting any comment, first run:
-            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments
-
-            If a comment already exists on the same file and line with the same suggestion, do NOT post it again.
+            Prefix each comment body with "🤖 **Codex**:" so it's clear which reviewer posted it.
 
             ## How to post feedback
 
@@ -62,10 +45,12 @@ jobs:
 
             gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
               -f body="<your comment>" \
-              -f commit_id="$(gh pr view ${{ github.event.pull_request.number }} --json headRefOid -q .headRefOid)" \
+              -f commit_id="${{ steps.pr.outputs.head_sha }}" \
               -f path="<file path>" \
               -F line=<line number> \
               -f side="RIGHT"
+
+            Before posting, run `gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments` to check for duplicates.
 
             Do NOT post top-level PR comments. Only post inline comments on specific lines.
         env:
